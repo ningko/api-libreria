@@ -1,0 +1,62 @@
+---init
+CREATE DATABASE IF NOT EXISTS libreriadb;
+USE libreriadb;
+
+---autores
+CREATE TABLE Autores (
+    id_autor INT AUTO_INCREMENT PRIMARY KEY,
+    nombre_completo VARCHAR(100) NOT NULL
+) ENGINE=InnoDB;
+
+---libros ^autores
+CREATE TABLE Libros (
+    id_libro INT AUTO_INCREMENT PRIMARY KEY,
+    titulo VARCHAR(150) NOT NULL,
+    genero VARCHAR(50),
+    precio DECIMAL(10,2) NOT NULL,
+    stock INT NOT NULL DEFAULT 0,
+    id_autor INT DEFAULT NULL,
+    CONSTRAINT fk_libro_autor 
+        FOREIGN KEY (id_autor)
+        REFERENCES Autores(id_autor)
+        ON DELETE SET NULL,
+    CONSTRAINT chk_precio_positivo CHECK (precio > 0),
+    CONSTRAINT chk_stock_positivo CHECK (stock >= 0)
+) ENGINE=InnoDB;
+
+---clientes
+CREATE TABLE Clientes (
+    id_cliente INT AUTO_INCREMENT PRIMARY KEY,
+    nombre VARCHAR(100) NOT NULL,
+    email VARCHAR(100) NOT NULL UNIQUE,
+    telefono VARCHAR(20)
+) ENGINE=InnoDB;
+
+
+---ventas ^clientes
+CREATE TABLE Ventas (
+    id_venta INT AUTO_INCREMENT PRIMARY KEY,
+    fecha_venta DATETIME DEFAULT CURRENT_TIMESTAMP,
+    total_venta DECIMAL(10, 2) DEFAULT 0.00,
+    id_cliente INT NOT NULL,
+    CONSTRAINT fk_venta_cliente FOREIGN KEY (id_cliente)
+        REFERENCES Clientes(id_cliente)
+        ON DELETE CASCADE
+);
+
+---detalle_ventas ^ventas ^libros
+CREATE TABLE Detalle_Ventas (
+    id_detalle INT AUTO_INCREMENT PRIMARY KEY,
+    id_venta INT NOT NULL,
+    id_libro INT NOT NULL,
+    cantidad INT NOT NULL CHECK (cantidad > 0),
+    precio_unitario DECIMAL(10,2) NOT NULL,
+    CONSTRAINT fk_detalle_venta
+        FOREIGN KEY (id_venta)
+        REFERENCES Ventas(id_venta)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_detalle_libro
+        FOREIGN KEY (id_libro)
+        REFERENCES Libros(id_libro)
+        ON DELETE CASCADE
+) ENGINE=InnoDB;

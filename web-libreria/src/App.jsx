@@ -64,32 +64,102 @@ export default function App() {
   const [modalOpen, setModalOpen] = useState(false);
   const [refresh, setRefresh] = useState(false);
 
-  const fetchData = async (currentTab) => {
-      const endpoint = tabEndpoints[currentTab || tab];
-      const res = await fetch(`${api}/${endpoint}`);
-      const json = await res.json();
-      setData(json[responseKeys[currentTab || tab]] || []);
-  };
+ const fetchData = async (currentTab) => {
+  try {
+    const endpoint = tabEndpoints[currentTab || tab];
+    const url = `${api}/${endpoint}`;
+    console.log("[fetchData] llamando a:", url);
+
+    const res = await fetch(url);
+    console.log("[fetchData] status:", res.status, "ok:", res.ok);
+
+    // Si status no es ok igual intentamos parsear el body para ver el mensaje
+    const json = await res.json().catch((e) => {
+      console.error("[fetchData] no pude parsear json:", e);
+      return null;
+    });
+    console.log("[fetchData] json recibido:", json);
+
+    // Tolerancias / fallback: puede venir
+    // { detalle_ventas: [...] }  OR { detalles: [...] } OR directamente [...]
+    let finalArray = [];
+    if (json == null) {
+      finalArray = [];
+    } else if (Array.isArray(json)) {
+      finalArray = json;
+    } else if (responseKeys[currentTab || tab] && Array.isArray(json[responseKeys[currentTab || tab]])) {
+      finalArray = json[responseKeys[currentTab || tab]];
+    } else if (Array.isArray(json.detalle_ventas)) {
+      finalArray = json.detalle_ventas;
+    } else if (Array.isArray(json.detalles)) {
+      finalArray = json.detalles;
+    } else if (Array.isArray(json.data)) {
+      finalArray = json.data;
+    } else {
+      // inspeccion rápida: buscar la primera propiedad que sea array
+      const arrProp = Object.keys(json).find((k) => Array.isArray(json[k]));
+      finalArray = arrProp ? json[arrProp] : [];
+    }
+
+    // Normalizar filas de detalle: garantizar id_detalle como PK
+    if (endpoint === "detalle_ventas" && finalArray.length > 0) {
+      finalArray = finalArray.map((r) => {
+        // si viene { id: x } lo convertimos a id_detalle
+        if (r.id !== undefined && r.id_detalle === undefined) {
+          return { ...r, id_detalle: r.id };
+        }
+        // si viene id_detalle pero no id_venta/id_libro, lo dejamos
+        return r;
+      });
+    }
+
+    console.log("[fetchData] filas finales:", finalArray.length, finalArray.slice(0,3));
+    setData(finalArray);
+  } catch (err) {
+    console.error("[fetchData] error:", err);
+    setData([]);
+  }
+};
 
   const fetchFKs = async (currentTab) => {
-      const endpoints = {};
-      if (currentTab === "libros") endpoints.id_autor = "autores";
-      if (currentTab === "ventas") endpoints.id_cliente = "clientes";
-      if (currentTab === "detalles") {
-        endpoints.id_venta = "ventas";
-        endpoints.id_libro = "libros";
+  try {
+    const endpoints = {};
+    if (currentTab === "libros") endpoints.id_autor = "autores";
+    if (currentTab === "ventas") endpoints.id_cliente = "clientes";
+    if (currentTab === "detalles") {
+      endpoints.id_venta = "ventas";
+      endpoints.id_libro = "libros";
+    }
+
+    const newFKS = {};
+    for (const fk in endpoints) {
+      const ep = endpoints[fk];
+      const url = `${api}/${tabEndpoints[ep] || ep}`;
+      console.log("[fetchFKs] llamando a:", url);
+      const res = await fetch(url);
+      const json = await res.json().catch(() => null);
+      console.log("[fetchFKs] json", ep, json);
+
+      // fallback: buscar cualquier array en el objeto
+      let list = [];
+      if (json == null) list = [];
+      else if (Array.isArray(json)) list = json;
+      else if (responseKeys[ep] && Array.isArray(json[responseKeys[ep]])) list = json[responseKeys[ep]];
+      else {
+        const arrProp = Object.keys(json).find((k) => Array.isArray(json[k]));
+        list = arrProp ? json[arrProp] : [];
       }
 
-      const newFKS = {};
-      for (const fk in endpoints) {
-        const ep = endpoints[fk];
-        const res = await fetch(`${api}/${tabEndpoints[ep] || ep}`);
-        const json = await res.json();
-        newFKS[fk] = json[responseKeys[ep]] || [];
-      }
+      newFKS[fk] = list;
+    }
 
-      setFkOptions(newFKS);
-  };
+    console.log("[fetchFKs] opciones fk:", newFKS);
+    setFkOptions(newFKS);
+  } catch (err) {
+    console.error("[fetchFKs] error:", err);
+    setFkOptions({});
+  }
+};
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -124,7 +194,20 @@ export default function App() {
     sourceFields.forEach((k) => {
       let val = row[k];
       if (k === "fecha_venta" && val) val = val.slice(0, 10);
-      copy[k] = val === null || val === undefined ? "" : val;
+      if (k.startsWith("id_") && typeof val === "string") {
+      const fkList = fkOptions[k] || [];
+      const found = fkList.find((o) => {
+      const idKey = Object.keys(o).find((kk) => kk.startsWith("id_"));
+    return o[idKey] === val || o.titulo === val || o.nombre === val || o.nombre_completo === val;
+  });
+
+  if (found) {
+    const idKey = Object.keys(found).find((kk) => kk.startsWith("id_"));
+    val = found[idKey];
+  }
+}
+
+copy[k] = val ?? "";
     });
     setEditing(row);
     setFormData(copy);
